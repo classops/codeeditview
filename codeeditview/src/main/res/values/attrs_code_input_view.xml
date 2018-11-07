@@ -1,0 +1,9 @@
+<resources>
+    <declare-styleable name="CodeEditView">
+        <attr name="cev_code_text" format="string"/>
+        <attr name="cev_code_textSize" format="dimension"/>
+        <attr name="cev_code_textColor" format="color"/>
+        <attr name="cev_code_drawable" format="color|reference"/>
+        <attr name="cev_code_cursorDrawable" format="color|reference"/>
+    </declare-styleable>
+</resources>
