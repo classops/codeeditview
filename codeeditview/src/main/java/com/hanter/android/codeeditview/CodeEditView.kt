@@ -8,7 +8,6 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.os.SystemClock
-import android.support.v4.os.HandlerCompat.postDelayed
 import android.text.Editable
 import android.text.InputType
 import android.text.TextPaint
@@ -34,10 +33,10 @@ class CodeEditView : View {
         val BLINK: Int = 500
 
         @JvmStatic
-        var DEBUG = true
+        var DEBUG = false
 
         @JvmStatic
-        val TAG = CodeEditView::class.simpleName
+        val TAG = "CodeEditView"
     }
 
     private var _codeText: String? = null // 字符串
