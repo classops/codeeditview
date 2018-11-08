@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.os.SystemClock
 import android.text.Editable
 import android.text.InputType
@@ -21,6 +22,7 @@ import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
+import java.util.*
 
 
 /**
@@ -29,53 +31,54 @@ import android.view.inputmethod.InputMethodManager
 class CodeEditView : View {
 
     companion object {
-        @JvmStatic
-        val BLINK: Int = 500
 
-        @JvmStatic
-        var DEBUG = false
+        const val BLINK: Int = 500
 
-        @JvmStatic
-        val TAG = "CodeEditView"
+        var DEBUG = true
+
+        const val TAG = "CodeEditView"
+
+        /**
+         * 默认验证码 位数
+         */
+        const val DEFAULT_CODE_LENGTH = 4
+
+        /**
+         * codeWidth为0时，自动适应宽度
+         */
+        const val CODE_WIDTH_AUTO = 0
     }
 
-    private var _codeText: String? = null // 字符串
+    private var editable: Editable = Editable.Factory.getInstance().newEditable("") // 字符串
     private var _codeTextColor: Int = Color.RED // 颜色
     private var _codeTextSize: Float = 0f // 大小
+    private var _codeWidth: Int = CODE_WIDTH_AUTO // 验证码字符宽度
+    private var _dividerWidth: Int = 0 // 验证码之间的间隔宽度
+    private var _codeLength: Int = DEFAULT_CODE_LENGTH // 验证码长度
 
-    private var _codeWidth: Int = 100 // 验证码字符宽度
-    private var _dividerWidth: Int = 20 // 验证码之间的间隔宽度
-
-    private var editable: Editable = Editable.Factory.getInstance().newEditable("")
-
-    private var textBounds = Rect()
-
+    private val textBounds = Rect()
     private lateinit var textPaint: TextPaint
-    private var textWidth: Float = 0f
-    private var textHeight: Float = 0f
 
     private lateinit var cursorPaint: TextPaint
     private var cursorDrawable: Drawable? = null
     private var mBlink: Blink? = null
     private var mShowCursor: Long = SystemClock.uptimeMillis()
 
-    private val count = 4
-
-    private val listener = DigitsKeyListener(false, true)
+    private lateinit var onKeyDownListener: DigitsKeyListener
 
     private var inputMethodManager: InputMethodManager? = null
 
     var onCodeCompleteListener: OnCodeCompleteListener? = null
 
     /**
-     * The text to draw
+     * The code text
      */
     var codeText: String?
-        get() = _codeText
+        get() = editable.toString()
         set(value) {
-            _codeText = value?.substring(0, Math.min(value.length, count))
+            val strCodeText = value?.substring(0, Math.min(value.length, _codeLength))
             editable.clear()
-            editable.append(_codeText)
+            editable.append(strCodeText)
             invalidateTextPaintAndMeasurements()
         }
 
@@ -96,9 +99,27 @@ class CodeEditView : View {
             invalidateTextPaintAndMeasurements()
         }
 
-    /**
-     * In the example view, this drawable is drawn above the text.
-     */
+    var codeLength: Int
+        get() = _codeLength
+        set(value) {
+            _codeLength = value
+            invalidate()
+        }
+
+    var codeItemWidth: Int
+        get() = _codeWidth
+        set(value) {
+            _codeWidth = value
+            invalidate()
+        }
+
+    var codeDividerWidth: Int
+        get() = _dividerWidth
+        set(value) {
+            _dividerWidth = value
+            invalidate()
+        }
+
     var codeDrawable: Drawable? = null
 
     constructor(context: Context) : super(context) {
@@ -137,13 +158,13 @@ class CodeEditView : View {
             val charLength = editable.length
             editable.delete(editable.length - 1, editable.length)
             invalidate()
-            if (charLength == count) {
+            if (charLength == _codeLength) {
                 makeBlink()
             }
         } else if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9
-                && editable.length < count) {
-            listener.onKeyDown(this@CodeEditView, editable, keyCode, event)
-            if (editable.length == count) {
+                && editable.length < _codeLength) {
+            onKeyDownListener.onKeyDown(this@CodeEditView, editable, keyCode, event)
+            if (editable.length == _codeLength) {
                 onCodeCompleteListener?.onCodeComplete(editable.toString())
             }
             invalidate()
@@ -152,29 +173,43 @@ class CodeEditView : View {
     }
 
     private fun init(attrs: AttributeSet?, defStyle: Int) {
-        // Load attributes
         val a = context.obtainStyledAttributes(attrs, R.styleable.CodeEditView, defStyle, 0)
 
-        _codeText = a.getString(R.styleable.CodeEditView_cev_code_text)
+        _codeWidth = a.getDimensionPixelSize(R.styleable.CodeEditView_cev_code_itemWidth, CODE_WIDTH_AUTO)
+
+        _dividerWidth = a.getDimensionPixelSize(R.styleable.CodeEditView_cev_code_dividerWidth, 10)
+
+        val strCodeText = a.getString(R.styleable.CodeEditView_cev_code_text)
+        editable.clear()
+        editable.append(strCodeText)
+
         _codeTextColor = a.getColor(R.styleable.CodeEditView_cev_code_textColor, codeTextColor)
 
         // Use getDimensionPixelSize or getDimensionPixelOffset when dealing with
         // values that should fall on pixel boundaries.
         _codeTextSize = a.getDimension(R.styleable.CodeEditView_cev_code_textSize, codeTextSize)
 
+        _codeLength = a.getInteger(R.styleable.CodeEditView_cev_code_length, DEFAULT_CODE_LENGTH)
+
         if (a.hasValue(R.styleable.CodeEditView_cev_code_drawable)) {
             codeDrawable = a.getDrawable(R.styleable.CodeEditView_cev_code_drawable)
             codeDrawable?.callback = this
         }
 
-        if (a.hasValue(R.styleable.CodeEditView_cev_code_cursorDrawable)) {
-            cursorDrawable = a.getDrawable(R.styleable.CodeEditView_cev_code_drawable)
-            cursorDrawable?.callback = this
+        cursorDrawable = if (a.hasValue(R.styleable.CodeEditView_cev_code_cursorDrawable)) {
+            a.getDrawable(R.styleable.CodeEditView_cev_code_cursorDrawable)
         } else { // TODO 获取系统默认光标
-            cursorDrawable = context.resources.getDrawable(R.drawable.code_input_cursor)
+            context.resources.getDrawable(R.drawable.code_input_cursor)
         }
+        cursorDrawable?.callback = this
 
         a.recycle()
+
+        onKeyDownListener = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            DigitsKeyListener(Locale.getDefault(), false, true)
+        } else {
+            DigitsKeyListener(false, true)
+        }
 
         // Set up a default TextPaint object
         textPaint = TextPaint()
@@ -184,8 +219,6 @@ class CodeEditView : View {
         cursorPaint = TextPaint()
         cursorPaint.flags = Paint.ANTI_ALIAS_FLAG
         cursorPaint.textAlign = Paint.Align.LEFT
-
-        codeText = _codeText
 
         // Update TextPaint and text measurements from attributes
         invalidateTextPaintAndMeasurements()
@@ -200,16 +233,15 @@ class CodeEditView : View {
     private fun invalidateTextPaintAndMeasurements() {
         textPaint.textSize = codeTextSize
         textPaint.color = codeTextColor
-        textWidth = textPaint.measureText(codeText)
-        textHeight = textPaint.fontMetrics.bottom
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val measureWidth = count * _codeWidth + (count - 1) * _dividerWidth +
+        val measureWidth = _codeLength * _codeWidth + (_codeLength - 1) * _dividerWidth +
                 paddingLeft + paddingRight
 
         val measureHeight = paddingTop + paddingBottom + _codeWidth
-        //        val measureHeight = textPaint.getTextBounds("0", 0, 1, textBounds)
+
+        textPaint.getTextBounds("0", 0, 1, textBounds)
 
         setMeasuredDimension(resolveSize(measureWidth, widthMeasureSpec),
                 resolveSize(measureHeight, heightMeasureSpec))
@@ -218,41 +250,43 @@ class CodeEditView : View {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val paddingLeft = paddingLeft
-        val paddingTop = paddingTop
-        val paddingRight = paddingRight
-        val paddingBottom = paddingBottom
-
         val contentWidth = width - paddingLeft - paddingRight
         val contentHeight = height - paddingTop - paddingBottom
 
-        for (i in 0 until count) {
-            val itemStart = paddingLeft + i * (_dividerWidth + _codeWidth)
+        if (DEBUG) {
+            Log.d(TAG, "contentWidth: $contentWidth, contentHeight: $contentHeight")
+        }
+
+        val itemWidth = if (_codeWidth <= CODE_WIDTH_AUTO) {
+            ((width - paddingLeft - paddingRight) - (_codeLength - 1) * _dividerWidth) / _codeLength
+        } else {
+            _codeWidth
+        }
+
+        for (i in 0 until _codeLength) {
+            val itemStart = paddingLeft + i * (_dividerWidth + itemWidth)
 
             // 绘制每一项背景框
             codeDrawable?.let {
                 it.setBounds(itemStart, paddingTop,
-                        itemStart + _codeWidth, paddingTop + contentHeight - paddingBottom)
+                        itemStart + itemWidth, paddingTop + contentHeight - paddingBottom)
                 it.draw(canvas)
             }
 
             // 绘制文本
             if (i < editable.length) {
                 val width = textPaint.measureText(editable, i, i + 1)
-                canvas.drawText(editable,
-                        i,
-                        i + 1,
-                        itemStart + (_codeWidth - width) / 2,
-                        paddingTop + (contentHeight + textHeight) / 2,
-                        textPaint)
+                val xOffset = itemStart + (itemWidth - width) / 2.0f
+                val yOffset = paddingTop + (contentHeight + textBounds.height()) / 2.0f
+                canvas.drawText(editable, i, i + 1, xOffset, yOffset, textPaint)
             }
         }
 
         // 如果未达到
-        if (editable.length < count && (mBlink?.isCancelled()?.not() == true)) {
+        if (editable.length < _codeLength && (mBlink?.isCancelled()?.not() == true)) {
             cursorDrawable?.let {
-                val cursorStart = paddingLeft + editable.length * (_dividerWidth + _codeWidth) +
-                        _codeWidth / 2 - it.intrinsicWidth / 2
+                val cursorStart = paddingLeft + editable.length * (_dividerWidth + itemWidth) +
+                        itemWidth / 2 - it.intrinsicWidth / 2
 
                 val cursorTop = paddingTop + (contentHeight - it.intrinsicHeight) / 2
                 it.setBounds(cursorStart, cursorTop, cursorStart + it.intrinsicWidth,
@@ -308,9 +342,6 @@ class CodeEditView : View {
 //        if (translate) canvas.translate(0f, cursorOffsetVertical)
 
         cursorDrawable?.draw(canvas)
-
-        if (DEBUG)
-            Log.d(TAG, "alpha: $")
 
 //        if (translate) canvas.translate(0f, (-cursorOffsetVertical))
     }
@@ -370,7 +401,7 @@ class CodeEditView : View {
     }
 
     private fun shouldBlink(): Boolean {
-        return isFocused and (editable.length < count)
+        return isFocused and (editable.length < _codeLength)
     }
 
     private fun makeBlink() {

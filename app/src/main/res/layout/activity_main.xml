@@ -8,7 +8,7 @@
 
     <com.hanter.android.codeeditview.CodeEditView
         android:id="@+id/civTest"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="48dp"
         android:background="#EEEEEE"
         android:paddingLeft="20dp"
@@ -16,15 +16,38 @@
         android:paddingTop="4dp"
         android:paddingBottom="4dp"
         android:focusable="true"
+        android:layout_marginTop="20dp"
+        app:cev_code_length="4"
+        app:cev_code_dividerWidth="8dp"
+        app:cev_code_itemWidth="0dp"
         app:cev_code_drawable="@drawable/custom_code_box"
         app:cev_code_text=""
         app:cev_code_textColor="#33b5e5"
-        app:cev_code_textSize="15sp"/>
+        app:cev_code_textSize="24sp"/>
+
+  <LinearLayout
+      android:orientation="horizontal"
+      android:layout_gravity="bottom"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content">
+
+      <Button
+          android:id="@+id/btnLength"
+          android:text="设置位数"
+          android:onClick="onClick"
+          android:layout_weight="1"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"/>
+
+      <Button
+          android:id="@+id/btnDividerWidth"
+          android:text="设置间隔"
+          android:onClick="onClick"
+          android:layout_weight="1"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"/>
 
 
-    <EditText
-        android:layout_marginTop="100dp"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"/>
+  </LinearLayout>
 
 </FrameLayout>
