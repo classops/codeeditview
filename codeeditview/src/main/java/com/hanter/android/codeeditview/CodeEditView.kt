@@ -1,7 +1,6 @@
 package com.hanter.android.codeeditview
 
 import android.content.Context
-import android.content.Context.INPUT_METHOD_SERVICE
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -9,8 +8,10 @@ import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.SystemClock
+import android.support.v4.content.ContextCompat
 import android.text.Editable
 import android.text.InputType
+import android.text.Selection
 import android.text.TextPaint
 import android.text.method.DigitsKeyListener
 import android.util.AttributeSet
@@ -24,7 +25,6 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import java.util.*
 
-
 /**
  * 短信验证码输入控件
  */
@@ -32,9 +32,9 @@ class CodeEditView : View {
 
     companion object {
 
-        const val BLINK: Int = 500
+        const val BLINK_DURATION: Int = 500
 
-        var DEBUG = true
+        var DEBUG = false
 
         const val TAG = "CodeEditView"
 
@@ -61,8 +61,8 @@ class CodeEditView : View {
 
     private lateinit var cursorPaint: TextPaint
     private var cursorDrawable: Drawable? = null
-    private var mBlink: Blink? = null
-    private var mShowCursor: Long = SystemClock.uptimeMillis()
+    private var cursorBlink: Blink? = null
+    private var showCursorTime: Long = SystemClock.uptimeMillis()
 
     private lateinit var onKeyDownListener: DigitsKeyListener
 
@@ -79,6 +79,7 @@ class CodeEditView : View {
             val strCodeText = value?.substring(0, Math.min(value.length, _codeLength))
             editable.clear()
             editable.append(strCodeText)
+            updateSelection()
             invalidateTextPaintAndMeasurements()
         }
 
@@ -137,13 +138,8 @@ class CodeEditView : View {
     override fun onCreateInputConnection(outAttrs: EditorInfo?): InputConnection {
         outAttrs?.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
 
-//        val ic = inputConnection(this)
-//        outAttrs.initialSelStart = getSelectionStart()
-//        outAttrs.initialSelEnd = getSelectionEnd()
-//        outAttrs.initialCapsMode = ic.getCursorCapsMode(getInputType())
-//        return ic
-
-//        val ic = BaseInputConnection(this@CodeEditView, false)
+        outAttrs?.initialSelStart = editable.length
+        outAttrs?.initialSelEnd = editable.length
 
         return BaseInputConnection(this@CodeEditView, false)
     }
@@ -157,10 +153,12 @@ class CodeEditView : View {
         if (keyCode == KeyEvent.KEYCODE_DEL && editable.isNotEmpty()) {
             val charLength = editable.length
             editable.delete(editable.length - 1, editable.length)
+
             invalidate()
             if (charLength == _codeLength) {
                 makeBlink()
             }
+
         } else if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9
                 && editable.length < _codeLength) {
             onKeyDownListener.onKeyDown(this@CodeEditView, editable, keyCode, event)
@@ -169,6 +167,9 @@ class CodeEditView : View {
             }
             invalidate()
         }
+
+        updateSelection()
+
         return super.onKeyDown(keyCode, event)
     }
 
@@ -199,7 +200,7 @@ class CodeEditView : View {
         cursorDrawable = if (a.hasValue(R.styleable.CodeEditView_cev_code_cursorDrawable)) {
             a.getDrawable(R.styleable.CodeEditView_cev_code_cursorDrawable)
         } else { // TODO 获取系统默认光标
-            context.resources.getDrawable(R.drawable.code_input_cursor)
+            ContextCompat.getDrawable(context, R.drawable.code_input_cursor)
         }
         cursorDrawable?.callback = this
 
@@ -223,7 +224,7 @@ class CodeEditView : View {
         // Update TextPaint and text measurements from attributes
         invalidateTextPaintAndMeasurements()
 
-        inputMethodManager = context.getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        inputMethodManager = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
 
         isFocusable = true
         isFocusableInTouchMode = true
@@ -283,7 +284,7 @@ class CodeEditView : View {
         }
 
         // 如果未达到
-        if (editable.length < _codeLength && (mBlink?.isCancelled()?.not() == true)) {
+        if (editable.length < _codeLength && (cursorBlink?.isCancelled()?.not() == true)) {
             cursorDrawable?.let {
                 val cursorStart = paddingLeft + editable.length * (_dividerWidth + itemWidth) +
                         itemWidth / 2 - it.intrinsicWidth / 2
@@ -359,7 +360,7 @@ class CodeEditView : View {
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
 
-        mShowCursor = SystemClock.uptimeMillis()
+        showCursorTime = SystemClock.uptimeMillis()
         if (gainFocus) {
             resumeBlink()
             showInputMethod()
@@ -367,6 +368,12 @@ class CodeEditView : View {
             suspendBlink()
             invalidate()
         }
+    }
+
+    private fun updateSelection() {
+        val start = editable.length
+        val end = editable.length
+        Selection.setSelection(editable, start, end)
     }
 
     fun showInputMethod() {
@@ -392,11 +399,11 @@ class CodeEditView : View {
     }
 
     private fun suspendBlink() {
-        mBlink?.cancel()
+        cursorBlink?.cancel()
     }
 
     private fun resumeBlink() {
-        mBlink?.uncancel()
+        cursorBlink?.uncancel()
         makeBlink()
     }
 
@@ -406,12 +413,12 @@ class CodeEditView : View {
 
     private fun makeBlink() {
         if (shouldBlink()) {
-            mShowCursor = SystemClock.uptimeMillis()
-            if (mBlink == null) mBlink = Blink(this)
-            removeCallbacks(mBlink)
-            postDelayed(mBlink, BLINK.toLong())
+            showCursorTime = SystemClock.uptimeMillis()
+            if (cursorBlink == null) cursorBlink = Blink(this)
+            removeCallbacks(cursorBlink)
+            postDelayed(cursorBlink, BLINK_DURATION.toLong())
         } else {
-            if (mBlink != null) removeCallbacks(mBlink)
+            if (cursorBlink != null) removeCallbacks(cursorBlink)
         }
     }
 
@@ -436,7 +443,7 @@ class CodeEditView : View {
 
             if (shouldBlink()) {
                 codeView.invalidateCursorPath()
-                codeView.postDelayed(this, BLINK.toLong())
+                codeView.postDelayed(this, BLINK_DURATION.toLong())
             }
         }
 
@@ -456,9 +463,7 @@ class CodeEditView : View {
         }
     }
 
-
     interface OnCodeCompleteListener {
         fun onCodeComplete(code: String)
     }
-
 }

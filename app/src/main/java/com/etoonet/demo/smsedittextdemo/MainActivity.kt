@@ -18,7 +18,8 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
 
     override fun onPostCreate(savedInstanceState: Bundle?) {
         super.onPostCreate(savedInstanceState)
-        civTest.showInputMethod()
+        civTest.codeText = "1234"
+//        civTest.showInputMethod()
         civTest.onCodeCompleteListener = object: CodeEditView.OnCodeCompleteListener {
             override fun onCodeComplete(code: String) {
                 Toast.makeText(this@MainActivity, code, Toast.LENGTH_SHORT).show()
